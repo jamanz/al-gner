@@ -32,18 +32,8 @@ classifiers = [
 
 # Minimal dependencies - using NeMo 2.3.0
 dependencies = [
-    # Core NeMo package with ASR components
     "nemo_toolkit[asr]",
-
-    # Additional dependencies not included in nemo_toolkit[asr]
-    # (most are already included, but keeping explicit for clarity)
     "omegaconf",        # Configuration management
-
-    # Note: The following are already included in nemo_toolkit[asr]
-    # but we keep them here for explicit version awareness
-    # "librosa>=0.10.1", # Audio processing (included in nemo)
-    # "soundfile", # Audio I/O (included in nemo)
-    # "numpy", # Numerical computing (included in nemo)
 ]
 
 # Optional dependencies
@@ -88,7 +78,11 @@ Homepage = "https://github.com/jamanz/al-gner"
 Repository = "https://github.com/jamanz/al-gner.git"
 
 [tool.setuptools]
+package-dir = {"" = "src"}
 packages = ["nemo_forced_aligner"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]

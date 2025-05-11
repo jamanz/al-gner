@@ -1,4 +1,3 @@
-# nemo_forced_aligner/__init__.py
 from .aligner import NeMoForcedAligner
 from .constants import SUPPORTED_MODELS
 
