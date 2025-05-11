@@ -320,6 +320,7 @@ class NeMoForcedAligner:
 
     def _ensure_model_on_device(self):
         """Ensure model is on the correct device"""
+        self.logger.info(f"model on device: {self.model.device}")
         if str(self.model.device) != str(self.transcribe_device):
             self.logger.info(f"Moving model from {self.model.device} to {self.transcribe_device}")
             self.model = self.model.to(self.transcribe_device)
