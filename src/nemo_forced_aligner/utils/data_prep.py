@@ -170,24 +170,43 @@ def get_batch_variables(
             T_list_batch.append(hypothesis.y_sequence.shape[0])
             pred_text_batch.append(hypothesis.text)
     else:
-        # Buffered chunked streaming logic
-        delay = buffered_chunk_params.get("delay", 0.4)
-        model_stride_in_secs = buffered_chunk_params.get("model_stride_in_secs", 0.04)
-        tokens_per_chunk = buffered_chunk_params.get("tokens_per_chunk", 10)
-        
-        for audio_filepath in audio_filepaths_batch:
-            if hasattr(model, 'reset'):
-                model.reset()
-            if hasattr(model, 'read_audio_file'):
-                model.read_audio_file(audio_filepath, delay, model_stride_in_secs)
-            
-            # For buffered streaming, transcribe and get logits
-            if hasattr(model, 'transcribe') and callable(model.transcribe):
-                hyp, logits = model.transcribe(tokens_per_chunk, delay, keep_logits=True)
-                log_probs_list_batch.append(logits)
-                T_list_batch.append(logits.shape[0])
-                pred_text_batch.append(hyp)
+        # For buffered chunked streaming, we'll use a simpler approach with the model's forward method
+        # This is because the keep_logits parameter doesn't exist in standard NeMo models
 
+        for audio_filepath in audio_filepaths_batch:
+            # Load audio and prepare it for the model
+            import librosa
+            audio, sr = librosa.load(audio_filepath, sr=16000)
+
+            # Convert to mono if needed and ensure float32
+            if len(audio.shape) > 1:
+                audio = audio.mean(axis=1)
+            audio = audio.astype(np.float32)
+
+            # Convert to torch tensor
+            audio_signal = torch.FloatTensor(audio).unsqueeze(0).to(model.device)
+            audio_signal_length = torch.LongTensor([len(audio)]).to(model.device)
+
+            # Get log probabilities using the model's forward method
+            with torch.no_grad():
+                log_probs, encoded_len, _ = model.forward(
+                    input_signal=audio_signal,
+                    input_signal_length=audio_signal_length
+                )
+
+            # Get the actual log probabilities tensor
+            log_probs = log_probs.squeeze(0)  # Remove batch dimension
+            T = encoded_len.item()  # Get actual encoded length
+
+            # Transcribe to get text
+            hyp = model.transcribe([audio_filepath])[0]
+
+            # Store results
+            log_probs_list_batch.append(log_probs)
+            T_list_batch.append(T)
+            pred_text_batch.append(hyp)
+
+    # The rest of the function remains unchanged
     # Process each manifest line with extracted log probabilities
     y_list_batch = []
     U_list_batch = []
@@ -248,7 +267,7 @@ def get_batch_variables(
     T_max = max(T_list_batch)
     U_max = max(U_list_batch)
     V = len(model.tokenizer.vocab) + 1 if hasattr(model, 'tokenizer') else len(model.decoder.vocabulary) + 1
-    
+
     T_batch = torch.tensor(T_list_batch)
     U_batch = torch.tensor(U_list_batch)
 
