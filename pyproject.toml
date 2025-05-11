@@ -1,5 +1,3 @@
-# pyproject.toml - Updated for NeMo 2.3.0
-
 [project]
 name = "nemo-forced-aligner"
 version = "0.1.0"
@@ -30,48 +28,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 
-# Minimal dependencies - using NeMo 2.3.0
 dependencies = [
     "nemo_toolkit[asr]",
-    "omegaconf",        # Configuration management
+    "omegaconf",
 ]
-
-# Optional dependencies
-[project.optional-dependencies]
-# GPU acceleration
-#gpu = [
-#    "numba>=0.56.0",
-#    "pynvml>=11.0.0",
-#]
-
-
-# Full dependency list (including everything from nemo_toolkit[asr])
-#full = [
-    # The following are all included with nemo_toolkit[asr]==2.3.0
-    # Listed here for reference and documentation
-    # "braceexpand",
-    # "editdistance",
-    # "einops",
-    # "g2p_en",
-    # "jiwer",
-    # "kaldi-python-io",
-    # "kaldiio",
-    # "lhotse>=1.26.0",
-    # "librosa>=0.10.1",
-    # "marshmallow",
-    # "optuna",
-    # "packaging",
-    # "pyannote.core",
-    # "pyannote.metrics",
-    # "pydub",
-    # "pyloudnorm",
-    # "resampy",
-    # "ruamel.yaml",
-    # "scipy>=0.14",
-    # "soundfile",
-    # "sox<=1.5.0",
-    # "texterrors<1.0.0",
-#]
 
 [project.urls]
 Homepage = "https://github.com/jamanz/al-gner"
@@ -79,7 +39,6 @@ Repository = "https://github.com/jamanz/al-gner.git"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["nemo_forced_aligner"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -87,9 +46,3 @@ where = ["src"]
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
-
-# Installation notes:
-# - nemo_toolkit[asr]==2.3.0 brings in all necessary dependencies
-# - Use 'pip install .' for minimal installation
-# - Use 'pip install .[gpu]' for GPU acceleration
-# - Use 'pip install .[dev]' for development
