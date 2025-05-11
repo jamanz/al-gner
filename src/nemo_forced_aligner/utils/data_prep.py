@@ -166,7 +166,7 @@ def get_batch_variables(
         stride = buffered_chunk_params["model_stride_in_secs"]
         toks   = buffered_chunk_params["tokens_per_chunk"]
         for path in tqdm(audio_paths, desc="Streaming chunks"):
-            model.reset()
+            # model.reset()
             model.read_audio_file(path, delay, stride)
             hyp, logits = model.transcribe(toks, delay, keep_logits=True)
             log_probs_list.append(logits)             # Tensor: (T_i, V)
