@@ -37,8 +37,7 @@ dependencies = [
 
     # Additional dependencies not included in nemo_toolkit[asr]
     # (most are already included, but keeping explicit for clarity)
-    #"torch>=1.13.0",           # PyTorch for neural networks
-    "omegaconf>=2.0.0",        # Configuration management
+    "omegaconf==2.3.0",        # Configuration management
 
     # Note: The following are already included in nemo_toolkit[asr]
     # but we keep them here for explicit version awareness
@@ -55,13 +54,9 @@ dependencies = [
 #    "pynvml>=11.0.0",
 #]
 
-# Development dependencies
-dev = [
-    "pytest>=7.0.0",
-]
 
 # Full dependency list (including everything from nemo_toolkit[asr])
-full = [
+#full = [
     # The following are all included with nemo_toolkit[asr]==2.3.0
     # Listed here for reference and documentation
     # "braceexpand",
@@ -86,7 +81,7 @@ full = [
     # "soundfile",
     # "sox<=1.5.0",
     # "texterrors<1.0.0",
-]
+#]
 
 [project.urls]
 Homepage = "https://github.com/jamanz/al-gner"

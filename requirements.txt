@@ -4,8 +4,7 @@
 nemo_toolkit[asr]==2.3.0
 
 # Additional explicit dependencies
-torch>=1.13.0
-omegaconf>=2.0.0
+omegaconf==2.3.0
 
 # GPU acceleration (optional - uncomment if needed)
 # numba>=0.56.0
