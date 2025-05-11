@@ -33,11 +33,11 @@ classifiers = [
 # Minimal dependencies - using NeMo 2.3.0
 dependencies = [
     # Core NeMo package with ASR components
-    "nemo_toolkit[asr]==2.3.0",
+    "nemo_toolkit[asr]",
 
     # Additional dependencies not included in nemo_toolkit[asr]
     # (most are already included, but keeping explicit for clarity)
-    "omegaconf==2.3.0",        # Configuration management
+    "omegaconf",        # Configuration management
 
     # Note: The following are already included in nemo_toolkit[asr]
     # but we keep them here for explicit version awareness
