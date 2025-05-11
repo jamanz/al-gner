@@ -8,30 +8,40 @@ import math
 
 
 def viterbi_decoding(
-        log_probs_batch: List[torch.Tensor],
-        y_batch: List[List[int]],
-        T_batch: List[int],
-        U_batch: List[int],
+        log_probs_batch: torch.Tensor,
+        y_batch: torch.Tensor,
+        T_batch: torch.Tensor,
+        U_batch: torch.Tensor,
         device: torch.device
 ) -> List[List[int]]:
     """
     Perform Viterbi decoding for forced alignment
 
     Args:
-        log_probs_batch: List of log probability tensors
-        y_batch: List of target token sequences
-        T_batch: List of time steps
-        U_batch: List of target sequence lengths
+        log_probs_batch: Tensor of log probabilities (B, T_max, V)
+        y_batch: Tensor of target token sequences (B, U_max)
+        T_batch: Tensor of time steps for each utterance
+        U_batch: Tensor of target sequence lengths
         device: Device to use for computation
 
     Returns:
         List of alignment paths
     """
+    B = log_probs_batch.shape[0]
     alignments = []
 
-    for log_probs, y, T, U in zip(log_probs_batch, y_batch, T_batch, U_batch):
-        # Move to specified device
-        log_probs = log_probs.to(device)
+    # Move tensors to device
+    log_probs_batch = log_probs_batch.to(device)
+    y_batch = y_batch.to(device)
+    T_batch = T_batch.to(device)
+    U_batch = U_batch.to(device)
+
+    for b in range(B):
+        # Extract utterance data
+        T = T_batch[b].item()
+        U = U_batch[b].item()
+        log_probs = log_probs_batch[b, :T, :]
+        y = y_batch[b, :U].tolist()
 
         # Perform Viterbi alignment
         alignment = viterbi_align_torch(log_probs, y, device)

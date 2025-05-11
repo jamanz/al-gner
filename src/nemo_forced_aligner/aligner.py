@@ -1,6 +1,7 @@
 # nemo_forced_aligner/aligner.py
 
 import os
+import sys
 import tempfile
 import logging
 import json
@@ -11,13 +12,18 @@ from typing import Optional, Union, List
 import torch
 import librosa
 import soundfile as sf
-from omegaconf import OmegaConf
 
-from nemo.collections.asr.models import ASRModel
-from nemo.collections.asr.models.ctc_models import EncDecCTCModel
-from nemo.collections.asr.models.hybrid_rnnt_ctc_models import EncDecHybridRNNTCTCModel
-from nemo.core.config import hydra_runner
-from nemo.utils import logging as nemo_logging
+try:
+    from nemo.collections.asr.models import ASRModel
+    from nemo.collections.asr.models.ctc_models import EncDecCTCModel
+    from nemo.collections.asr.models.hybrid_rnnt_ctc_models import EncDecHybridRNNTCTCModel
+    from nemo.utils import logging as nemo_logging
+except ImportError as e:
+    raise ImportError(
+        "NeMo ASR dependencies are required. Please install with:\n"
+        "pip install nemo_toolkit[asr]\n"
+        f"Original error: {e}"
+    )
 
 from .constants import (
     SUPPORTED_MODELS, CTC_MODELS, DEFAULT_SAMPLE_RATE,
@@ -120,15 +126,23 @@ class NeMoForcedAligner:
         self._temp_files = []
 
     def _setup_default_logger(self) -> logging.Logger:
-        """Setup default logger"""
+        """Setup default logger that always writes to stdout in notebooks."""
         logger = logging.getLogger('NeMoForcedAligner')
         logger.setLevel(logging.INFO)
 
+        # avoid adding multiple handlers if already configured
         if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
+            # explicitly send to stdout
+            handler = logging.StreamHandler(stream=sys.stdout)
+            handler.setLevel(logging.INFO)
+
+            fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            handler.setFormatter(logging.Formatter(fmt))
+
             logger.addHandler(handler)
+
+        # prevent messages from being handled by the root logger too
+        logger.propagate = False
 
         return logger
 
@@ -191,8 +205,11 @@ class NeMoForcedAligner:
 
         self.logger.info(f"Loading model: {model_name}")
 
-        model = ASRModel.from_pretrained(model_name, map_location=self.default_device)
+        model = ASRModel.from_pretrained(model_name)
         model.eval()
+        
+        # Move model to the appropriate device
+        model = model.to(self.transcribe_device)
 
         # Configure model for CTC if hybrid
         if isinstance(model, EncDecHybridRNNTCTCModel):
@@ -301,14 +318,32 @@ class NeMoForcedAligner:
 
         return duration
 
+    def _ensure_model_on_device(self):
+        """Ensure model is on the correct device"""
+        if str(self.model.device) != str(self.transcribe_device):
+            self.logger.info(f"Moving model from {self.model.device} to {self.transcribe_device}")
+            self.model = self.model.to(self.transcribe_device)
+
     def _run_alignment(self, config: NeMoAlignmentConfig) -> dict:
         """Run the actual alignment process"""
+        # Ensure model is on the correct device
+        self._ensure_model_on_device()
+        
         # Get batch starts and ends
         starts, ends = get_batch_starts_ends(config.manifest_filepath, config.batch_size)
 
         # Initialize variables
         output_timestep_duration = None
         alignments = []
+
+        # Prepare buffered chunk parameters
+        buffered_chunk_params = None
+        if config.use_buffered_chunked_streaming:
+            buffered_chunk_params = {
+                "delay": config.chunk_len_in_secs,
+                "model_stride_in_secs": 0.04,  # Default stride
+                "tokens_per_chunk": 10  # Default tokens per chunk
+            }
 
         # Process batches
         for start, end in zip(starts, ends):
@@ -325,11 +360,7 @@ class NeMoForcedAligner:
                 output_timestep_duration,
                 False,  # simulate_cache_aware_streaming
                 config.use_buffered_chunked_streaming,
-                {
-                    "delay": None,
-                    "model_stride_in_secs": None,
-                    "tokens_per_chunk": None
-                } if config.use_buffered_chunked_streaming else {}
+                buffered_chunk_params
             )
 
             # Run viterbi decoding
@@ -385,10 +416,21 @@ class NeMoForcedAligner:
             audio_duration = self._check_audio_duration(audio_path)
 
             # Potentially adjust model for long audio
-            original_model_name = self.model.name if hasattr(self.model, 'name') else None
+            # Try to get the model name from various possible attributes
+            original_model_name = None
+            if hasattr(self.model, 'model_name'):
+                original_model_name = self.model.model_name
+            elif hasattr(self.model, 'name'):
+                original_model_name = self.model.name
+            elif hasattr(self.model, '_model_name'):
+                original_model_name = self.model._model_name
+            elif hasattr(self.model, 'cfg') and hasattr(self.model.cfg, 'model_name'):
+                original_model_name = self.model.cfg.model_name
+                
             if original_model_name:
                 best_model_name = self._select_best_model_for_duration(audio_duration, original_model_name)
                 if best_model_name != original_model_name:
+                    self.logger.info(f"Switching from {original_model_name} to {best_model_name} for long audio")
                     self.model = self._load_model(best_model_name)
 
             # Process audio
