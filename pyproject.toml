@@ -1,4 +1,4 @@
-# pyproject.toml - Minimal Dependencies Version
+# pyproject.toml - Updated for NeMo 2.3.0
 
 [project]
 name = "nemo-forced-aligner"
@@ -30,38 +30,77 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 
-# Minimal core dependencies only
+# Minimal dependencies - using NeMo 2.3.0
 dependencies = [
-    "nemo_toolkit[asr]>=1.18.0",  # Changed from [all] to [asr] only
-    "torch>=1.13.0",
-    "librosa>=0.10.0",
-    "soundfile>=0.12.0",
-    "numpy>=1.21.0",
-    "omegaconf>=2.0.0",
+    # Core NeMo package with ASR components
+    "nemo_toolkit[asr]==2.3.0",
+
+    # Additional dependencies not included in nemo_toolkit[asr]
+    # (most are already included, but keeping explicit for clarity)
+    #"torch>=1.13.0",           # PyTorch for neural networks
+    "omegaconf>=2.0.0",        # Configuration management
+
+    # Note: The following are already included in nemo_toolkit[asr]
+    # but we keep them here for explicit version awareness
+    # "librosa>=0.10.1", # Audio processing (included in nemo)
+    # "soundfile", # Audio I/O (included in nemo)
+    # "numpy", # Numerical computing (included in nemo)
 ]
 
 # Optional dependencies
 [project.optional-dependencies]
-# GPU acceleration (kept as requested)
-gpu = [
-    "numba>=0.56.0",
-    "pynvml>=11.0.0",
-]
+# GPU acceleration
+#gpu = [
+#    "numba>=0.56.0",
+#    "pynvml>=11.0.0",
+#]
 
-# Development dependencies (minimal set)
+# Development dependencies
 dev = [
     "pytest>=7.0.0",
+]
+
+# Full dependency list (including everything from nemo_toolkit[asr])
+full = [
+    # The following are all included with nemo_toolkit[asr]==2.3.0
+    # Listed here for reference and documentation
+    # "braceexpand",
+    # "editdistance",
+    # "einops",
+    # "g2p_en",
+    # "jiwer",
+    # "kaldi-python-io",
+    # "kaldiio",
+    # "lhotse>=1.26.0",
+    # "librosa>=0.10.1",
+    # "marshmallow",
+    # "optuna",
+    # "packaging",
+    # "pyannote.core",
+    # "pyannote.metrics",
+    # "pydub",
+    # "pyloudnorm",
+    # "resampy",
+    # "ruamel.yaml",
+    # "scipy>=0.14",
+    # "soundfile",
+    # "sox<=1.5.0",
+    # "texterrors<1.0.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/jamanz/al-gner"
 Repository = "https://github.com/jamanz/al-gner.git"
 
-# Package discovery
 [tool.setuptools]
 packages = ["nemo_forced_aligner"]
 
-# Build system requirements
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+# Installation notes:
+# - nemo_toolkit[asr]==2.3.0 brings in all necessary dependencies
+# - Use 'pip install .' for minimal installation
+# - Use 'pip install .[gpu]' for GPU acceleration
+# - Use 'pip install .[dev]' for development
