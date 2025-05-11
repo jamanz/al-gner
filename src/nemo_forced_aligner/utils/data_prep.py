@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from tqdm import tqdm
 
+import soundfile as sf
+
 from nemo.collections.asr.parts.utils.streaming_utils import FrameBatchASR
 from nemo.utils import logging
 import librosa
+from nemo.collections.asr.models.ctc_models import EncDecCTCModel
 
 # Constants for alignment
 BLANK_TOKEN = '<blank>'
@@ -120,322 +123,124 @@ def get_utt_obj(
     return utt_obj
 
 
-def process_long_audio_with_buffered_streaming(
-        model,
-        audio_filepath: str,
-        chunk_size_seconds: float = 30.0,
-        overlap_seconds: float = 2.0,
-        sample_rate: int = 16000,
-) -> Tuple[torch.Tensor, int, str]:
-    """
-    Process a long audio file using buffered chunked streaming to avoid memory issues.
-
-    Args:
-        model: NeMo ASR model (CTC or Hybrid with CTC mode)
-        audio_filepath: Path to the audio file
-        chunk_size_seconds: Size of each processing chunk in seconds
-        overlap_seconds: Overlap between chunks in seconds
-        sample_rate: Sample rate to use for audio processing
-
-    Returns:
-        log_probs: Log probabilities tensor
-        T: Length of the log_probs tensor
-        transcription: Full text transcription
-    """
-    logging.info(f"Processing long audio file: {audio_filepath}")
-
-    # Get audio duration without loading entire file
-    info = librosa.get_duration(path=audio_filepath)
-    total_duration = info
-
-    # Calculate number of chunks
-    effective_chunk_size = chunk_size_seconds - overlap_seconds
-    num_chunks = max(1, int(np.ceil(total_duration / effective_chunk_size)))
-
-    logging.info(f"Audio duration: {total_duration:.2f} seconds")
-    logging.info(f"Processing in {num_chunks} chunks of {chunk_size_seconds}s with {overlap_seconds}s overlap")
-
-    # Process audio in chunks
-    all_logits = []
-    all_transcriptions = []
-
-    # Create progress bar
-    progress_bar = tqdm(range(num_chunks), desc="Processing chunks")
-
-    # Calculate output timestep duration based on model
-    if hasattr(model, 'name'):
-        model_name = model.name.lower()
-        if "citrinet" in model_name or "_fastconformer_" in model_name:
-            output_timestep_duration = 0.08
-        elif "_conformer_" in model_name:
-            output_timestep_duration = 0.04
-        elif "quartznet" in model_name:
-            output_timestep_duration = 0.02
-        else:
-            output_timestep_duration = 0.04  # Default value
-    else:
-        output_timestep_duration = 0.04  # Default fallback
-
-    # Calculate frames per chunk for logits
-    frames_per_second = 1.0 / output_timestep_duration
-    overlap_frames = int(overlap_seconds * frames_per_second)
-
-    for i in progress_bar:
-        # Calculate chunk boundaries
-        start_time = max(0, i * effective_chunk_size)
-        end_time = min(total_duration, start_time + chunk_size_seconds)
-        chunk_length = end_time - start_time
-
-        # Update progress bar
-        progress_bar.set_description(f"Chunk {i + 1}/{num_chunks} ({start_time:.1f}s - {end_time:.1f}s)")
-
-        try:
-            # Load just this chunk of audio
-            audio, sr = librosa.load(
-                audio_filepath,
-                sr=sample_rate,
-                offset=start_time,
-                duration=chunk_length
-            )
-
-            # Convert to mono if needed and ensure float32
-            if len(audio.shape) > 1:
-                audio = audio.mean(axis=1)
-            audio = audio.astype(np.float32)
-
-            # Convert to torch tensor
-            audio_signal = torch.FloatTensor(audio).unsqueeze(0).to(model.device)
-            audio_signal_length = torch.LongTensor([len(audio)]).to(model.device)
-
-            # Get log probabilities using the model's forward method
-            with torch.no_grad():
-                log_probs, encoded_len, _ = model.forward(
-                    input_signal=audio_signal,
-                    input_signal_length=audio_signal_length
-                )
-
-            # Get text transcription for this chunk
-            chunk_transcription = model.transcribe([audio_filepath],
-                                                   offset=start_time,
-                                                   duration=chunk_length)[0]
-            all_transcriptions.append(chunk_transcription)
-
-            # Remove batch dimension from log_probs
-            log_probs = log_probs.squeeze(0)
-
-            # Handle overlap - trim beginning for all chunks except first
-            if i > 0 and overlap_frames > 0:
-                log_probs = log_probs[overlap_frames // 2:]
-
-            # Handle overlap - trim end for all chunks except last
-            if i < num_chunks - 1 and overlap_frames > 0:
-                log_probs = log_probs[:-overlap_frames // 2]
-
-            # Add to the accumulated logits
-            all_logits.append(log_probs)
-
-        except Exception as e:
-            logging.error(f"Error processing chunk {i + 1}: {str(e)}")
-            # Continue with next chunk
-
-    # Concatenate all logits
-    if len(all_logits) > 0:
-        try:
-            full_log_probs = torch.cat(all_logits, dim=0)
-            T = full_log_probs.shape[0]
-
-            # Join transcriptions with spaces
-            full_transcription = " ".join([t.strip() for t in all_transcriptions])
-
-            logging.info(f"Successfully processed audio with {T} frames")
-            return full_log_probs, T, full_transcription
-
-        except Exception as e:
-            logging.error(f"Error concatenating logits: {str(e)}")
-            raise
-    else:
-        raise RuntimeError("Failed to process any chunks of the audio file")
-
 
 def get_batch_variables(
-        manifest_lines_batch: List[Dict],
-        model,
-        additional_segment_grouping_separator: Optional[str],
-        align_using_pred_text: bool,
-        audio_filepath_parts_in_utt_id: int,
-        output_timestep_duration: Optional[float],
-        simulate_cache_aware_streaming: bool = False,
-        use_buffered_chunked_streaming: bool = False,
-        buffered_chunk_params: Optional[Dict] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, List[Dict], float]:
+    manifest_lines_batch,
+    model: EncDecCTCModel,
+    separator: str,
+    align_using_pred_text: bool,
+    audio_filepath_parts_in_utt_id,
+    output_timestep_duration,
+    simulate_cache_aware_streaming: bool = False,
+    use_buffered_chunked_streaming: bool = False,
+    buffered_chunk_params: dict = None,
+):
     """
-    Get batch variables for alignment with enhanced support for very long audio files.
-
-    Args:
-        manifest_lines_batch: List of manifest lines with audio paths and text
-        model: NeMo ASR model
-        additional_segment_grouping_separator: Optional separator for text segments
-        align_using_pred_text: Whether to use ASR-predicted text for alignment
-        audio_filepath_parts_in_utt_id: How many parts of audio path to use for utt_id
-        output_timestep_duration: Duration of each output timestep
-        simulate_cache_aware_streaming: Whether to simulate cache-aware streaming
-        use_buffered_chunked_streaming: Whether to use buffered chunked streaming
-        buffered_chunk_params: Parameters for buffered chunked streaming
-
     Returns:
-        log_probs_batch: Log probabilities tensor for each utterance
-        y_batch: Target token sequences
-        T_batch: Sequence lengths
-        U_batch: Target sequence lengths
-        utt_obj_batch: Utterance objects
-        output_timestep_duration: Duration per timestep
+        log_probs_batch, y_batch, T_batch, U_batch, utt_obj_batch, output_timestep_duration
     """
-    # Get audio filepaths for batch
-    audio_filepaths_batch = [line["audio_filepath"] for line in manifest_lines_batch]
-    B = len(audio_filepaths_batch)
-    log_probs_list_batch = []
-    T_list_batch = []
-    pred_text_batch = []
 
-    # Get default buffered chunk parameters if not provided
-    if use_buffered_chunked_streaming and buffered_chunk_params is None:
-        buffered_chunk_params = {
-            "chunk_size_seconds": 30.0,  # Process 30 seconds at a time
-            "overlap_seconds": 2.0,  # 2 second overlap between chunks
-            "sample_rate": 16000  # Default sample rate
-        }
+    buffered_chunk_params = buffered_chunk_params or {}
+    audio_paths = [line["audio_filepath"] for line in manifest_lines_batch]
+    B = len(audio_paths)
+    log_probs_list, T_list, pred_text = [], [], []
 
-    # Process audio files
+    # 1) Collect log-probs & (optionally) ASR text
     if not use_buffered_chunked_streaming:
-        # Standard processing for short audio files
-        if not simulate_cache_aware_streaming:
-            with torch.no_grad():
-                hypotheses = model.transcribe(audio_filepaths_batch, return_hypotheses=True, batch_size=B)
-        else:
-            # Simulate cache-aware streaming if requested
-            with torch.no_grad():
-                hypotheses = model.transcribe_simulate_cache_aware_streaming(
-                    audio_filepaths_batch, return_hypotheses=True, batch_size=B
-                )
-
-        # Handle Hybrid models that return tuples
-        if type(hypotheses) == tuple and len(hypotheses) == 2:
-            hypotheses = hypotheses[0]
-
-        # Extract log probabilities and predictions from hypotheses
-        for hypothesis in hypotheses:
-            log_probs_list_batch.append(hypothesis.y_sequence)
-            T_list_batch.append(hypothesis.y_sequence.shape[0])
-            pred_text_batch.append(hypothesis.text)
-    else:
-        # Buffered chunked streaming for long audio files
-        logging.info("Using buffered chunked streaming for long audio files")
-
-        # Get parameters from buffered_chunk_params
-        chunk_size_seconds = buffered_chunk_params.get("chunk_size_seconds", 30.0)
-        overlap_seconds = buffered_chunk_params.get("overlap_seconds", 2.0)
-        sample_rate = buffered_chunk_params.get("sample_rate", 16000)
-
-        for audio_filepath in audio_filepaths_batch:
-            # Process long audio file with efficient buffered streaming
-            full_log_probs, T, full_transcription = process_long_audio_with_buffered_streaming(
-                model=model,
-                audio_filepath=audio_filepath,
-                chunk_size_seconds=chunk_size_seconds,
-                overlap_seconds=overlap_seconds,
-                sample_rate=sample_rate
-            )
-
-            # Store results
-            log_probs_list_batch.append(full_log_probs)
-            T_list_batch.append(T)
-            pred_text_batch.append(full_transcription)
-
-    # Process each manifest line with extracted log probabilities
-    y_list_batch = []
-    U_list_batch = []
-    utt_obj_batch = []
-
-    for i_line, line in enumerate(manifest_lines_batch):
-        # Determine text to use for alignment
-        if align_using_pred_text:
-            gt_text_for_alignment = " ".join(pred_text_batch[i_line].split())
-        else:
-            gt_text_for_alignment = line["text"]
-
-        # Generate utterance ID from audio filepath
-        audio_path = Path(audio_filepaths_batch[i_line])
-        utt_id = str(audio_path.stem).replace(' ', '_')
-
-        # Calculate output timestep duration if not provided
-        if output_timestep_duration is None:
-            # Estimate based on model type
-            model_name = model.name if hasattr(model, 'name') else ""
-
-            if "citrinet" in model_name or "_fastconformer_" in model_name:
-                output_timestep_duration = 0.08
-            elif "_conformer_" in model_name:
-                output_timestep_duration = 0.04
-            elif "quartznet" in model_name:
-                output_timestep_duration = 0.02
+        with torch.no_grad():
+            if not simulate_cache_aware_streaming:
+                hyps = model.transcribe(audio_paths, return_hypotheses=True, batch_size=B)
             else:
-                output_timestep_duration = 0.04  # Default value
+                hyps = model.transcribe_simulate_cache_aware_streaming(
+                    audio_paths, return_hypotheses=True, batch_size=B
+                )
+        # Hybrid models return (best, nbest), so unpack if needed
+        if isinstance(hyps, tuple) and len(hyps) == 2:
+            hyps = hyps[0]
+        for h in hyps:
+            log_probs_list.append(h.y_sequence)       # Tensor: (T_i, V)
+            T_list.append(h.y_sequence.shape[0])
+            pred_text.append(h.text)
+    else:
+        delay  = buffered_chunk_params["delay"]
+        stride = buffered_chunk_params["model_stride_in_secs"]
+        toks   = buffered_chunk_params["tokens_per_chunk"]
+        for path in tqdm(audio_paths, desc="Streaming chunks"):
+            model.reset()
+            model.read_audio_file(path, delay, stride)
+            hyp, logits = model.transcribe(toks, delay, keep_logits=True)
+            log_probs_list.append(logits)             # Tensor: (T_i, V)
+            T_list.append(logits.shape[0])
+            pred_text.append(hyp)
 
-        # Create utterance object using helper function
-        utt_obj = get_utt_obj(
-            {"text": gt_text_for_alignment, "audio_filepath": audio_filepaths_batch[i_line]},
-            utt_id,
-            additional_segment_grouping_separator,
+    # 2) Build y/U and Utterance objects
+    y_list, U_list, utt_objs = [], [], []
+    for i, line in enumerate(manifest_lines_batch):
+        gt = pred_text[i] if align_using_pred_text else line["text"]
+        utt = get_utt_obj(
+            gt,
             model,
-            log_probs_list_batch[i_line],
-            output_timestep_duration
+            separator,
+            T_list[i],
+            audio_paths[i],
+            _get_utt_id(audio_paths[i], audio_filepath_parts_in_utt_id),
         )
-
-        # Store additional information
+        # preserve original text if aligning on predictions
         if align_using_pred_text:
-            utt_obj['pred_text'] = pred_text_batch[i_line]
-            if "text" in line:
-                utt_obj['text'] = line["text"]
+            utt.pred_text = pred_text[i]
+            utt.text = line.get("text", "")
         else:
-            utt_obj['text'] = line["text"]
+            utt.text = line.get("text", "")
+        y_list.append(utt.token_ids_with_blanks)
+        U_list.append(len(utt.token_ids_with_blanks))
+        utt_objs.append(utt)
 
-        # Get token sequence for alignment
-        y = utt_obj['tokens']
+    # 3) Pad into batch tensors
+    T_max = max(T_list)
+    U_max = max(U_list)
+    V = len(getattr(model, "tokenizer", model.decoder).vocab) + 1
+    T_batch = torch.tensor(T_list)
+    U_batch = torch.tensor(U_list)
 
-        # Add to batch
-        y_list_batch.append(y)
-        U_list_batch.append(len(y))
-        utt_obj_batch.append(utt_obj)
-
-    # Convert to proper tensors for Viterbi decoding
-    T_max = max(T_list_batch)
-    U_max = max(U_list_batch)
-    V = len(model.tokenizer.vocab) + 1 if hasattr(model, 'tokenizer') else len(model.decoder.vocabulary) + 1
-
-    T_batch = torch.tensor(T_list_batch)
-    U_batch = torch.tensor(U_list_batch)
-
-    # Create log_probs_batch tensor of shape (B x T_max x V)
-    V_NEGATIVE_NUM = -10.0  # Large negative number for padding
+    # log_probs: (B, T_max, V)
     log_probs_batch = V_NEGATIVE_NUM * torch.ones((B, T_max, V))
-    for b, log_probs_utt in enumerate(log_probs_list_batch):
-        t = log_probs_utt.shape[0]
-        log_probs_batch[b, :t, :] = log_probs_utt
+    for b, lp in enumerate(log_probs_list):
+        log_probs_batch[b, : lp.shape[0], :] = lp
 
-    # Create y tensor of shape (B x U_max)
+    # y_batch: (B, U_max)
     y_batch = V * torch.ones((B, U_max), dtype=torch.int64)
-    for b, y_utt in enumerate(y_list_batch):
-        U_utt = U_batch[b]
-        y_batch[b, :U_utt] = torch.tensor(y_utt)
+    for b, y in enumerate(y_list):
+        y_batch[b, : len(y)] = torch.tensor(y, dtype=torch.int64)
+
+    # 4) Compute timestep duration if needed
+    if output_timestep_duration is None:
+        pre = model.cfg.preprocessor
+        if "window_stride" not in pre or "sample_rate" not in pre:
+            raise ValueError("Cannot compute timestep duration without window_stride and sample_rate")
+        with sf.SoundFile(audio_paths[0]) as f:
+            audio_dur = f.frames / f.samplerate
+        n_in = audio_dur / pre.window_stride
+        down = round(n_in / int(T_batch[0]))
+        hop = model.preprocessor.featurizer.hop_length
+        sr  = pre.sample_rate
+        output_timestep_duration = (hop * down) / sr
+        logging.info(f"Computed timestep duration: {output_timestep_duration}s")
 
     return (
         log_probs_batch,
         y_batch,
         T_batch,
         U_batch,
-        utt_obj_batch,
+        utt_objs,
         output_timestep_duration,
     )
+
+
+def _get_utt_id(audio_filepath, audio_filepath_parts_in_utt_id):
+    fp_parts = Path(audio_filepath).parts[-audio_filepath_parts_in_utt_id:]
+    utt_id = Path("_".join(fp_parts)).stem
+    utt_id = utt_id.replace(" ", "-")  # replace any spaces in the filepath with dashes
+    return utt_id
 
 
 def add_t_start_end_to_utt_obj(
