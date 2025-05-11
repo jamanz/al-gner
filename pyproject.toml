@@ -38,9 +38,12 @@ Homepage = "https://github.com/jamanz/al-gner"
 Repository = "https://github.com/jamanz/al-gner.git"
 
 [tool.setuptools]
-packages = ["nemo_forced_aligner"]
-package-dir = {"nemo_forced_aligner" = "src"}
+# Using automatic package discovery - no explicit package-dir needed
 
+[tool.setuptools.packages.find]
+where = ["src"]
+# include and exclude are optional - setuptools will find packages automatically
+include = ["nemo_forced_aligner*"]
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
