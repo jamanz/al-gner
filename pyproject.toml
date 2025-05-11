@@ -1,0 +1,207 @@
+# pyproject.toml
+
+[project]
+name = "nemo-forced-aligner"
+version = "0.1.0"
+description = "Simple NeMo forced aligner for Kaggle/Colab integration"
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+maintainers = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+keywords = [
+    "nemo",
+    "forced-alignment",
+    "asr",
+    "speech-recognition",
+    "kaggle",
+    "colab"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# Core dependencies
+dependencies = [
+    "nemo_toolkit[all]>=1.18.0",
+    "torch>=1.13.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.21.0",
+    "omegaconf>=2.0.0",
+]
+
+# Optional dependencies
+[project.optional-dependencies]
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.0.0",
+    "mypy>=0.950",
+]
+
+# GPU acceleration
+gpu = [
+    "numba>=0.56.0",
+    "pynvml>=11.0.0",
+]
+
+# Documentation
+docs = [
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.17.0",
+]
+
+# All optional dependencies
+all = [
+    "nemo-forced-aligner[dev,gpu,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/nemo-forced-aligner"
+Documentation = "https://github.com/yourusername/nemo-forced-aligner#readme"
+Repository = "https://github.com/yourusername/nemo-forced-aligner.git"
+Changelog = "https://github.com/yourusername/nemo-forced-aligner/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/yourusername/nemo-forced-aligner/issues"
+
+# Entry points for CLI (if needed in the future)
+[project.scripts]
+# nemo-align = "nemo_forced_aligner.cli:main"
+
+# Package discovery
+[tool.setuptools]
+packages = ["nemo_forced_aligner"]
+
+[tool.setuptools.package-data]
+nemo_forced_aligner = ["py.typed"]
+
+# Build system requirements
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Black code formatter configuration
+[tool.black]
+line-length = 100
+target-version = ['py37', 'py38', 'py39', 'py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# isort import sorter configuration
+[tool.isort]
+profile = "black"
+line_length = 100
+src_paths = ["nemo_forced_aligner", "tests"]
+
+# MyPy static type checker configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "nemo.*",
+    "librosa.*",
+    "soundfile.*",
+    "numba.*",
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+addopts = "--cov=nemo_forced_aligner --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Coverage.py configuration
+[tool.coverage.run]
+source = ["nemo_forced_aligner"]
+omit = ["tests/*", "*/site-packages/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass",
+    "except ImportError:",
+]
+
+# Ruff linter configuration (alternative to flake8)
+[tool.ruff]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+line-length = 100
+target-version = "py37"
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+
+# Bandit security linter configuration
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv"]
+tests = ["B201", "B301", "B302", "B303", "B304", "B305", "B306", "B307", "B308", "B309", "B310", "B311", "B312", "B313", "B314", "B315", "B316", "B317", "B318", "B319", "B320", "B321", "B322", "B323", "B324", "B325", "B701", "B702", "B703"]
+
+# Pyright type checker configuration (Microsoft's type checker)
+[tool.pyright]
+include = ["nemo_forced_aligner"]
+exclude = ["**/__pycache__", "tests"]
+ignore = ["**/node_modules", "**/.mypy_cache"]
+defineConstant = { DEBUG = true }
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+pythonVersion = "3.8"
+pythonPlatform = "Linux"
